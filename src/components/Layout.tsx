@@ -34,20 +34,13 @@ export const Layout: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-fridge-bg p-4 rounded-fridge flex items-center gap-3 border border-black/5">
             <div className="w-10 h-10 bg-fridge-peach rounded-full flex items-center justify-center text-fridge-orange font-bold shadow-sm border-2 border-white">
-              {user?.email?.[0].toUpperCase() || 'U'}
+              G
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-fridge-text truncate">{user?.email?.split('@')[0]}</p>
-              <p className="text-[10px] font-bold text-fridge-text-muted truncate">个人账户</p>
+              <p className="text-sm font-bold text-fridge-text truncate">访客模式</p>
+              <p className="text-[10px] font-bold text-fridge-text-muted truncate">本地数据存储</p>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-3 w-full p-4 text-fridge-text-muted hover:bg-red-50 hover:text-red-500 rounded-fridge transition-all duration-300 font-bold text-sm"
-          >
-            <LogOut size={18} />
-            退出登录
-          </button>
         </div>
       </nav>
 
@@ -75,13 +68,10 @@ export const Layout: React.FC = () => {
           </div>
 
           <MobileNavItem to="/scan" icon={<Camera size={22} />} label="扫描" />
-          <button 
-            onClick={logout}
-            className="flex flex-col items-center justify-center gap-1 flex-1 h-full text-fridge-text-muted active:text-red-500 transition-all"
-          >
-            <LogOut size={22} />
-            <span className="text-[10px] font-bold">退出</span>
-          </button>
+          <div className="flex-1 flex flex-col items-center justify-center gap-1 h-full text-fridge-text-muted opacity-40">
+            <User size={22} />
+            <span className="text-[10px] font-bold">访客</span>
+          </div>
         </div>
       </nav>
 

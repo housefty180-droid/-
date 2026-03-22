@@ -50,21 +50,18 @@ const AppRoutes = () => {
   }
 
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={<Layout />}
-        >
-          <Route index element={<Home />} />
-          <Route path="add" element={<AddItem />} />
-          <Route path="scan" element={<ScanReceipt />} />
-          <Route path="stats" element={<Stats />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AnimatePresence>
+    <Routes location={location} key={location.pathname}>
+      <Route
+        path="/"
+        element={<Layout />}
+      >
+        <Route index element={<Home />} />
+        <Route path="add" element={<AddItem />} />
+        <Route path="scan" element={<ScanReceipt />} />
+        <Route path="stats" element={<Stats />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 };
 

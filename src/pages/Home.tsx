@@ -448,10 +448,10 @@ export const Home: React.FC = () => {
               
               // Determine background color based on category
               const categoryBg = item.category === 'refrigerated' 
-                ? 'bg-blue-50/50' 
+                ? 'bg-blue-50' 
                 : item.category === 'frozen' 
-                  ? 'bg-slate-50/50' 
-                  : 'bg-orange-50/50';
+                  ? 'bg-slate-50' 
+                  : 'bg-orange-50';
 
               const categoryBorder = item.category === 'refrigerated' 
                 ? 'border-blue-100' 
@@ -463,9 +463,9 @@ export const Home: React.FC = () => {
                 <motion.div
                   key={item.id}
                   layout
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 100 }}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setSelectionMode(true);
@@ -498,7 +498,7 @@ export const Home: React.FC = () => {
                         <span className="text-xs md:text-sm font-bold text-fridge-text-muted ml-0.5">{item.unit || '个'}</span>
                       </span>
                     </div>
-                    <div className={`flex items-center gap-1 mt-1 text-[10px] md:text-[12px] font-bold opacity-80 ${expiry.color}`}>
+                    <div className={`flex items-center gap-1 mt-1 text-[10px] md:text-[12px] font-bold ${expiry.color}`}>
                       <Clock size={10} />
                       {expiry.text}
                     </div>

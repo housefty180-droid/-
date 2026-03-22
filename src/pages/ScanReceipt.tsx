@@ -40,9 +40,35 @@ export const ScanReceipt: React.FC = () => {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImage(reader.result as string);
-      setParsedItems([]);
-      setError(null);
+      const img = new Image();
+      img.onload = () => {
+        // Resize image if it's too large (max 1600px width/height)
+        const maxDim = 1600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = (height / width) * maxDim;
+            width = maxDim;
+          } else {
+            width = (width / height) * maxDim;
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        const resizedImage = canvas.toDataURL('image/jpeg', 0.8);
+        setImage(resizedImage);
+        setParsedItems([]);
+        setError(null);
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -58,7 +84,7 @@ export const ScanReceipt: React.FC = () => {
 
       const todayStr = new Date().toISOString().split('T')[0];
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: {
           parts: [
             {

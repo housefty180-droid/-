@@ -14,10 +14,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   // Use a fixed guest ID for "no login" mode so data persists for the user
   const guestUser: any = {
     uid: 'guest_user_default',
@@ -25,6 +21,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     displayName: '访客用户',
     isAnonymous: true
   };
+
+  const [user, setUser] = useState<FirebaseUser | null>(guestUser);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -45,7 +45,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error("Error fetching or creating user:", err);
         }
       } else {
-        // If not logged in, use the guest user
         setUser(guestUser);
       }
       setLoading(false);

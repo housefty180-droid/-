@@ -1,5 +1,5 @@
 {
   "name": "Smart Fridge Manager",
   "description": "Manage your refrigerator inventory, track expiration dates, and scan grocery receipts to automatically categorize items.",
-  "requestFramePermissions": ["camera"]
+  "requestFramePermissions": ["camera", "microphone"]
 }

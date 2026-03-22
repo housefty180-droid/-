@@ -54,7 +54,15 @@ export const VoiceAssistant: React.FC = () => {
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error', event.error);
       setIsListening(false);
-      setFeedback('语音识别失败，请重试。');
+      if (event.error === 'not-allowed') {
+        setFeedback('请在浏览器设置中允许麦克风权限。');
+      } else if (event.error === 'network') {
+        setFeedback('网络连接问题，请检查网络。');
+      } else if (event.error === 'no-speech') {
+        setFeedback('未检测到语音，请大声点。');
+      } else {
+        setFeedback('语音识别失败，请重试。');
+      }
     };
 
     recognition.onend = () => {
@@ -72,7 +80,7 @@ export const VoiceAssistant: React.FC = () => {
     try {
       const todayStr = new Date().toISOString().split('T')[0];
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: `User said: "${text}". Parse this into an action for a fridge management app.
 Action can be 'ADD' (add a new item) or 'DELETE' (remove/consume an item).
 If ADD, extract name, category (frozen, refrigerated, room_temp), quantity, unit, and estimate expiryDate (YYYY-MM-DD) from today (${todayStr}) using standard guidelines or search.
