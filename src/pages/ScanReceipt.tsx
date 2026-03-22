@@ -9,8 +9,6 @@ import { Camera, Upload, Loader2, CheckCircle } from 'lucide-react';
 import { PixelSnowflake, PixelIceCube, PixelBox } from '../components/PixelIcons';
 import { GoogleGenAI, Type } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 interface ParsedItem {
   id: string;
   name: string;
@@ -33,6 +31,8 @@ export const ScanReceipt: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

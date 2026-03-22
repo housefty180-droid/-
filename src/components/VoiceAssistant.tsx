@@ -8,8 +8,6 @@ import { OperationType } from '../types';
 import { handleFirestoreError } from '../utils/firestoreErrorHandler';
 import { motion } from 'motion/react';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 // @ts-ignore
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -19,6 +17,8 @@ export const VoiceAssistant: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState('');
+
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
   useEffect(() => {
     if (feedback) {
