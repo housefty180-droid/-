@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../AuthContext';
 
 export const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, error } = useAuth();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-fridge-bg p-6">
@@ -11,7 +11,13 @@ export const Login: React.FC = () => {
           <span className="text-6xl">❄️</span>
         </div>
         <h1 className="text-4xl font-black tracking-tight mb-4 text-fridge-text">智能冰箱管家</h1>
-        <p className="text-lg text-fridge-text-muted font-bold mb-12 leading-relaxed">管理您的食物，减少浪费，节省开支。</p>
+        <p className="text-lg text-fridge-text-muted font-bold mb-8 leading-relaxed">管理您的食物，减少浪费，节省开支。</p>
+        
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-fridge border border-red-100 text-sm font-black animate-in fade-in slide-in-from-top-2">
+            {error}
+          </div>
+        )}
         
         <button
           onClick={login}

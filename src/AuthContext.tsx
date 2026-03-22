@@ -6,6 +6,7 @@ import { auth, db } from './firebase';
 interface AuthContextType {
   user: FirebaseUser | null;
   loading: boolean;
+  error: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -15,6 +16,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -31,8 +34,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               createdAt: serverTimestamp(),
             });
           }
-        } catch (error) {
-          console.error("Error fetching or creating user:", error);
+        } catch (err) {
+          console.error("Error fetching or creating user:", err);
+          setError("无法同步用户数据，请检查网络连接。");
         }
       }
       setLoading(false);
@@ -42,8 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    setError(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      console.error("Login error:", err);
+      if (err.code === 'auth/popup-blocked') {
+        setError("登录窗口被拦截，请允许弹出窗口。");
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError("当前域名未在 Firebase 控制台中授权。");
+      } else {
+        setError("登录失败，请重试。错误: " + (err.message || "未知错误"));
+      }
+    }
   };
 
   const logout = async () => {
@@ -51,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, error }}>
       {children}
     </AuthContext.Provider>
   );
