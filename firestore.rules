@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - User ID
+    //   - email: string (required) - User email
+    //   - displayName: string (optional) - User display name
+    //   - createdAt: timestamp (required) - Account creation time
+    //
+    // Collection: items
+    // Document ID: {itemId}
+    // Fields:
+    //   - userId: string (required) - Owner User ID
+    //   - name: string (required) - Item name
+    //   - category: string (required) - 'frozen', 'refrigerated', 'room_temp'
+    //   - expiryDate: timestamp (optional) - Expiration date
+    //   - addedDate: timestamp (required) - Date added
+    //   - status: string (required) - 'active', 'consumed', 'discarded'
+    //   - quantity: number (optional) - Quantity
+    //   - unit: string (optional) - Unit of measurement
+    //   - lastModified: timestamp (required) - Last modification time
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidEmail(email) {
+      return email == null || (email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
+    }
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp &&
+             (!('displayName' in data) || data.displayName == null || validStringLength('displayName', 0, 100));
+    }
+
+    function isValidItem(data) {
+      return hasRequiredFields(['userId', 'name', 'category', 'addedDate', 'status', 'lastModified']) &&
+             data.userId == request.auth.uid &&
+             validStringLength('name', 0, 100) &&
+             data.category in ['frozen', 'refrigerated', 'room_temp'] &&
+             data.addedDate is timestamp &&
+             data.lastModified is timestamp &&
+             data.status in ['active', 'consumed', 'discarded'] &&
+             (!('expiryDate' in data) || data.expiryDate == null || data.expiryDate is timestamp) &&
+             (!('quantity' in data) || data.quantity == null || (data.quantity is number && data.quantity >= 0)) &&
+             (!('unit' in data) || data.unit == null || validStringLength('unit', 0, 50));
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(userId);
+    }
+
+    match /items/{itemId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidItem(request.resource.data);
+      allow update: if isDocOwner() && isValidItem(request.resource.data) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isDocOwner();
+    }
+  }
+}

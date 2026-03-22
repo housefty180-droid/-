@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "FridgeItem": {
+      "title": "FridgeItem",
+      "description": "An item stored in the refrigerator, freezer, or pantry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["frozen", "refrigerated", "room_temp"] },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "addedDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "consumed", "discarded"] },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "lastModified": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "category", "addedDate", "status", "lastModified"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "items/{itemId}": {
+      "schema": { "$ref": "#/entities/FridgeItem" },
+      "description": "Items in the fridge belonging to users"
+    }
+  }
+}
