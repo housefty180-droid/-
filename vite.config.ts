@@ -16,19 +16,13 @@ export default defineConfig(({mode}) => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 2000,
+      chunkSizeWarningLimit: 5000,
       rollupOptions: {
         output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('firebase')) return 'vendor-firebase';
-              if (id.includes('lucide-react')) return 'vendor-lucide';
-              if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
-              if (id.includes('motion')) return 'vendor-motion';
-              if (id.includes('@google/genai')) return 'vendor-ai';
-              if (id.includes('react')) return 'vendor-react';
-              return 'vendor-others';
-            }
+          manualChunks: {
+            'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            'vendor-ai': ['@google/genai'],
+            'vendor-charts': ['recharts'],
           },
         },
       },
