@@ -34,7 +34,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 const AppRoutes = () => {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -52,14 +52,10 @@ const AppRoutes = () => {
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/login" element={<Login />} />
         <Route
           path="/"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
+          element={<Layout />}
         >
           <Route index element={<Home />} />
           <Route path="add" element={<AddItem />} />

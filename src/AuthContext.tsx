@@ -16,13 +16,20 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState<string | null>(null);
+
+  // Use a fixed guest ID for "no login" mode so data persists for the user
+  const guestUser: any = {
+    uid: 'guest_user_default',
+    email: 'guest@example.com',
+    displayName: '访客用户',
+    isAnonymous: true
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
         try {
           const userRef = doc(db, 'users', currentUser.uid);
           const userSnap = await getDoc(userRef);
@@ -36,8 +43,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch (err) {
           console.error("Error fetching or creating user:", err);
-          setError("无法同步用户数据，请检查网络连接。");
         }
+      } else {
+        // If not logged in, use the guest user
+        setUser(guestUser);
       }
       setLoading(false);
     });
@@ -55,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (err.code === 'auth/popup-blocked') {
         setError("登录窗口被拦截，请允许弹出窗口。");
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError("当前域名未在 Firebase 控制台中授权。");
+        setError("当前域名未在 Firebase 控制台中授权。您可以继续以访客身份使用。");
       } else {
         setError("登录失败，请重试。错误: " + (err.message || "未知错误"));
       }
@@ -64,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await signOut(auth);
+    setUser(guestUser); // Revert to guest on logout
   };
 
   return (

@@ -33,16 +33,22 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isGuest(userId) {
+      return userId == 'guest_user_default';
+    }
+
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return (isAuthenticated() && request.auth.uid == userId) || isGuest(userId);
     }
 
     function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.userId;
+      return (isAuthenticated() && request.auth.uid == resource.data.userId) || isGuest(resource.data.userId);
     }
 
     function uidUnchanged() {
-      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+      return !('uid' in request.resource.data) || 
+             (isAuthenticated() && request.resource.data.uid == request.auth.uid) ||
+             isGuest(request.resource.data.uid);
     }
 
     function uidNotModified() {
@@ -65,16 +71,18 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
+      let currentUid = isAuthenticated() ? request.auth.uid : 'guest_user_default';
       return hasRequiredFields(['uid', 'email', 'createdAt']) &&
-             data.uid == request.auth.uid &&
+             data.uid == currentUid &&
              isValidEmail(data.email) &&
              data.createdAt is timestamp &&
              (!('displayName' in data) || data.displayName == null || validStringLength('displayName', 0, 100));
     }
 
     function isValidItem(data) {
+      let currentUid = isAuthenticated() ? request.auth.uid : 'guest_user_default';
       return hasRequiredFields(['userId', 'name', 'category', 'addedDate', 'status', 'lastModified']) &&
-             data.userId == request.auth.uid &&
+             data.userId == currentUid &&
              validStringLength('name', 0, 100) &&
              data.category in ['frozen', 'refrigerated', 'room_temp'] &&
              data.addedDate is timestamp &&
@@ -94,8 +102,8 @@ service cloud.firestore {
 
     match /items/{itemId} {
       allow read: if isDocOwner();
-      allow create: if isAuthenticated() && isValidItem(request.resource.data);
-      allow update: if isDocOwner() && isValidItem(request.resource.data) && request.resource.data.userId == resource.data.userId;
+      allow create: if (isAuthenticated() || isGuest(request.resource.data.userId)) && isValidItem(request.resource.data);
+      allow update: if (isDocOwner() || isGuest(resource.data.userId)) && isValidItem(request.resource.data);
       allow delete: if isDocOwner();
     }
   }
