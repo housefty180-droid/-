@@ -1,43 +1,27 @@
 {
   "entities": {
-    "User": {
-      "title": "User",
-      "description": "User profile information",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "displayName": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["uid", "email", "createdAt"]
-    },
     "FridgeItem": {
-      "title": "FridgeItem",
-      "description": "An item stored in the refrigerator, freezer, or pantry",
+      "title": "Fridge Item",
+      "description": "An item stored in the refrigerator or pantry.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "name": { "type": "string" },
+        "userId": { "type": "string", "description": "The UID of the owner." },
+        "name": { "type": "string", "description": "Name of the item." },
         "category": { "type": "string", "enum": ["frozen", "refrigerated", "room_temp"] },
-        "expiryDate": { "type": "string", "format": "date-time" },
-        "addedDate": { "type": "string", "format": "date-time" },
+        "expiryDate": { "type": "string", "format": "date-time", "description": "When the item expires." },
+        "addedDate": { "type": "string", "format": "date-time", "description": "When the item was added." },
         "status": { "type": "string", "enum": ["active", "consumed", "discarded"] },
-        "quantity": { "type": "number" },
-        "unit": { "type": "string" },
-        "lastModified": { "type": "string", "format": "date-time" }
+        "quantity": { "type": "number", "description": "Amount of the item." },
+        "unit": { "type": "string", "description": "Unit of measurement." },
+        "lastModified": { "type": "string", "format": "date-time", "description": "Last update timestamp." }
       },
-      "required": ["userId", "name", "category", "addedDate", "status", "lastModified"]
+      "required": ["userId", "name", "category", "status"]
     }
   },
   "firestore": {
-    "users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
-      "description": "User profiles"
-    },
-    "items/{itemId}": {
-      "schema": { "$ref": "#/entities/FridgeItem" },
-      "description": "Items in the fridge belonging to users"
+    "/items/{itemId}": {
+      "schema": "FridgeItem",
+      "description": "Collection of all food items across all users."
     }
   }
 }

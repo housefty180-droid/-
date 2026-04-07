@@ -1,110 +1,83 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: items
+// Document ID: auto-generated
+// Fields:
+//   - userId: string (required) - UID of the owner
+//   - name: string (required, max 100) - Name of the item
+//   - category: string (required, enum: frozen, refrigerated, room_temp)
+//   - expiryDate: timestamp (optional) - Expiration date
+//   - addedDate: timestamp (required) - Date added
+//   - status: string (required, enum: active, consumed, discarded)
+//   - quantity: number (optional) - Amount
+//   - unit: string (optional, max 50) - Unit of measurement
+//   - lastModified: timestamp (optional) - Last update time
+//
+// ===============================================================
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId}
-    // Fields:
-    //   - uid: string (required) - User ID
-    //   - email: string (required) - User email
-    //   - displayName: string (optional) - User display name
-    //   - createdAt: timestamp (required) - Account creation time
-    //
-    // Collection: items
-    // Document ID: {itemId}
-    // Fields:
-    //   - userId: string (required) - Owner User ID
-    //   - name: string (required) - Item name
-    //   - category: string (required) - 'frozen', 'refrigerated', 'room_temp'
-    //   - expiryDate: timestamp (optional) - Expiration date
-    //   - addedDate: timestamp (required) - Date added
-    //   - status: string (required) - 'active', 'consumed', 'discarded'
-    //   - quantity: number (optional) - Quantity
-    //   - unit: string (optional) - Unit of measurement
-    //   - lastModified: timestamp (required) - Last modification time
-    //
-    // ===============================================================
 
+    // ===============================================================
     // Helper Functions
+    // ===============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isGuest(userId) {
-      return userId == 'guest_user_default';
-    }
-
     function isOwner(userId) {
-      return (isAuthenticated() && request.auth.uid == userId) || isGuest(userId);
+      return (isAuthenticated() && request.auth.uid == userId) || 
+             (!isAuthenticated() && userId == 'guest_user_default');
     }
 
     function isDocOwner() {
-      return (isAuthenticated() && request.auth.uid == resource.data.userId) || isGuest(resource.data.userId);
-    }
-
-    function uidUnchanged() {
-      return !('uid' in request.resource.data) || 
-             (isAuthenticated() && request.resource.data.uid == request.auth.uid) ||
-             isGuest(request.resource.data.uid);
-    }
-
-    function uidNotModified() {
-      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
-    }
-
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-
-    function validStringLength(field, minLen, maxLen) {
-      return request.resource.data[field] is string &&
-        request.resource.data[field].size() >= minLen &&
-        request.resource.data[field].size() <= maxLen;
-    }
-
-    function isValidEmail(email) {
-      return email == null || (email is string &&
-        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
-    }
-
-    function isValidUser(data) {
-      let currentUid = isAuthenticated() ? request.auth.uid : 'guest_user_default';
-      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
-             data.uid == currentUid &&
-             isValidEmail(data.email) &&
-             data.createdAt is timestamp &&
-             (!('displayName' in data) || data.displayName == null || validStringLength('displayName', 0, 100));
+      return isOwner(resource.data.userId);
     }
 
     function isValidItem(data) {
-      let currentUid = isAuthenticated() ? request.auth.uid : 'guest_user_default';
-      return hasRequiredFields(['userId', 'name', 'category', 'addedDate', 'status', 'lastModified']) &&
-             data.userId == currentUid &&
-             validStringLength('name', 0, 100) &&
+      return data.keys().hasAll(['userId', 'name', 'category', 'status']) &&
+             data.userId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.category in ['frozen', 'refrigerated', 'room_temp'] &&
-             data.addedDate is timestamp &&
-             data.lastModified is timestamp &&
              data.status in ['active', 'consumed', 'discarded'] &&
-             (!('expiryDate' in data) || data.expiryDate == null || data.expiryDate is timestamp) &&
-             (!('quantity' in data) || data.quantity == null || (data.quantity is number && data.quantity >= 0)) &&
-             (!('unit' in data) || data.unit == null || validStringLength('unit', 0, 50));
+             (!('quantity' in data) || data.quantity is number) &&
+             (!('unit' in data) || (data.unit is string && data.unit.size() <= 50)) &&
+             (!('expiryDate' in data) || data.expiryDate is timestamp || data.expiryDate == null);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "housefty180@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /items/{itemId} {
+      // Allow reading if the user is the owner (including guest)
+      allow read: if isDocOwner() || isAdmin();
+      
+      // Allow creating if the user sets themselves as the owner
+      allow create: if isValidItem(request.resource.data) && 
+                    (isOwner(request.resource.data.userId) || isAdmin());
+      
+      // Allow updating if the user is the owner and the data remains valid
+      allow update: if isValidItem(request.resource.data) && 
+                    (isDocOwner() || isAdmin()) &&
+                    request.resource.data.userId == resource.data.userId; // userId is immutable
+                    
+      allow delete: if isAdmin();
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified();
-      allow delete: if isOwner(userId);
-    }
-
-    match /items/{itemId} {
-      allow read: if isDocOwner();
-      allow create: if (isAuthenticated() || isGuest(request.resource.data.userId)) && isValidItem(request.resource.data);
-      allow update: if (isDocOwner() || isGuest(resource.data.userId)) && isValidItem(request.resource.data);
-      allow delete: if isDocOwner();
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
     }
   }
 }

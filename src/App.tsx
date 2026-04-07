@@ -8,6 +8,7 @@ import { Home } from './pages/Home';
 import { AddItem } from './pages/AddItem';
 import { ScanReceipt } from './pages/ScanReceipt';
 import { Stats } from './pages/Stats';
+import { EInkView } from './pages/EInkView';
 
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -60,6 +61,7 @@ const AppRoutes = () => {
         <Route path="scan" element={<ScanReceipt />} />
         <Route path="stats" element={<Stats />} />
       </Route>
+      <Route path="/eink" element={<EInkView />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
