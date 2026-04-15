@@ -7,7 +7,8 @@ import { handleFirestoreError } from '../utils/firestoreErrorHandler';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Upload, Loader2, CheckCircle } from 'lucide-react';
 import { PixelSnowflake, PixelIceCube, PixelBox } from '../components/PixelIcons';
-import { GoogleGenAI, Type } from '@google/genai';
+import { OpenAI } from 'openai';
+import Tesseract from 'tesseract.js';
 
 interface ParsedItem {
   id: string;
@@ -29,11 +30,16 @@ export const ScanReceipt: React.FC = () => {
   
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+  const apiKey = process.env.FRIDGE_API_KEY || process.env.GEMINI_API_KEY;
+  const openai = new OpenAI({
+    apiKey: apiKey || '',
+    baseURL: 'https://api.deepseek.com',
+    dangerouslyAllowBrowser: true
+  });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,71 +83,71 @@ export const ScanReceipt: React.FC = () => {
   const analyzeReceipt = async () => {
     if (!image) return;
     setLoading(true);
+    setOcrProgress(0);
     setError(null);
 
     try {
-      const base64Data = image.split(',')[1];
-      const mimeType = image.split(';')[0].split(':')[1];
-
-      const todayStr = new Date().toISOString().split('T')[0];
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType,
-              },
-            },
-            {
-              text: `Extract the grocery items from this receipt. For each item:
-1. Provide the name in Chinese.
-2. Infer the storage category (frozen, refrigerated, or room_temp).
-3. Extract quantity and unit in Chinese if available.
-4. Determine if it belongs in a fridge/pantry (isFridgeItem: true) or if it is a non-food item like toilet paper (isFridgeItem: false).
-5. For branded items (e.g., specific milk brands), use Google Search to find their typical shelf life. For fresh meat/produce, use standard general guidelines (e.g., fresh meat 3-5 days refrigerated, 1 month frozen). Calculate the estimated expiry date from today (${todayStr}) and return it in YYYY-MM-DD format.`,
-            },
-          ],
-        },
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING, description: 'The name of the item' },
-                category: { 
-                  type: Type.STRING, 
-                  description: 'The storage category',
-                  enum: ['frozen', 'refrigerated', 'room_temp']
-                },
-                quantity: { type: Type.NUMBER, description: 'The quantity of the item' },
-                unit: { type: Type.STRING, description: 'The unit of measurement (e.g., kg, lbs, count)' },
-                isFridgeItem: { type: Type.BOOLEAN, description: 'True if it is a food/fridge/pantry item, false if it is a non-food item like toilet paper or cleaning supplies.' },
-                expiryDate: { type: Type.STRING, description: 'Estimated expiry date in YYYY-MM-DD format based on brand search or general guidelines.' }
-              },
-              required: ['name', 'category', 'isFridgeItem']
-            }
+      // Step 1: Perform OCR using Tesseract.js
+      const { data: { text } } = await Tesseract.recognize(image, 'chi_sim+eng', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            setOcrProgress(Math.round(m.progress * 100));
           }
         }
       });
 
-      const jsonStr = response.text?.trim() || '[]';
-      const rawItems: any[] = JSON.parse(jsonStr);
+      if (!text || text.trim().length < 5) {
+        throw new Error('未能从图片中识别出足够的文字，请确保图片清晰且包含购物清单。');
+      }
+
+      // Step 2: Send extracted text to DeepSeek for parsing
+      const todayStr = new Date().toISOString().split('T')[0];
+      const response = await openai.chat.completions.create({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a grocery receipt parser. I will provide you with raw OCR text from a shopping receipt. 
+Your task is to extract the items and return them as a JSON array.
+For each item:
+1. name: Name in Chinese.
+2. category: "frozen", "refrigerated", or "room_temp".
+3. quantity: Number (if available).
+4. unit: Unit string (if available).
+5. isFridgeItem: Boolean (true if it's food/pantry, false if non-food).
+6. expiryDate: Estimated expiry date (YYYY-MM-DD) based on today's date (${todayStr}).
+
+Return ONLY a JSON array of objects. If the OCR text is messy, do your best to guess the items.`
+          },
+          {
+            role: 'user',
+            content: `OCR Text:\n${text}`
+          }
+        ],
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0].message.content || '[]';
+      let rawItems: any[] = [];
+      try {
+        const parsed = JSON.parse(content);
+        rawItems = Array.isArray(parsed) ? parsed : (parsed.items || parsed.grocery_items || []);
+      } catch (e) {
+        console.error("Failed to parse JSON", e);
+      }
+
       const items: ParsedItem[] = rawItems.map((item, index) => ({
         ...item,
         id: `item-${index}-${Date.now()}`,
-        selected: item.isFridgeItem, // Auto-select fridge items, deselect non-fridge items
+        selected: item.isFridgeItem,
       }));
       setParsedItems(items);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || '分析小票失败，请重试。');
+      setError(err.message || '分析小票失败，请检查图片清晰度或 API 额度。');
     } finally {
       setLoading(false);
+      setOcrProgress(0);
     }
   };
 
@@ -268,7 +274,12 @@ export const ScanReceipt: React.FC = () => {
                     disabled={loading}
                     className="flex-[2] bg-fridge-orange text-white py-5 px-6 rounded-full font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-2xl shadow-fridge-orange/20 text-[15px]"
                   >
-                    {loading ? <Loader2 className="animate-spin" size={20} /> : '开始分析'}
+                    {loading ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="animate-spin" size={20} />
+                        <span>{ocrProgress > 0 ? `识别中 ${ocrProgress}%` : '处理中...'}</span>
+                      </div>
+                    ) : '开始分析'}
                   </motion.button>
                 </div>
               </motion.div>
