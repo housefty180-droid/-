@@ -35,6 +35,7 @@ export const ScanReceipt: React.FC = () => {
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
+  const [newItemName, setNewItemName] = useState('');
 
   const apiKey = process.env.FRIDGE_API_KEY || process.env.GEMINI_API_KEY;
   const openai = new OpenAI({
@@ -126,18 +127,18 @@ export const ScanReceipt: React.FC = () => {
         messages: [
           {
             role: 'system',
-            content: `你是一个专业的超市小票分析专家。我会给你一段非常杂乱的 OCR 识别文本，其中包含很多错别字、乱码和无关信息。
-你的任务是：
-1. 从乱码中“打捞”出真实的商品名称（通常是中文）。
-2. 过滤掉店铺名、电话、日期、流水号等无关信息。
-3. 预测每个商品的分类（frozen/refrigerated/room_temp）。
-4. 估算保质期（基于今天：${todayStr}）。
+            content: `你是一个顶级的超市小票数据清洗专家。我会给你一段非常杂乱的 OCR 文本。
+请执行以下逻辑：
+1. 深度扫描：即使文字只有一半对，也要结合上下文（如价格、单位、常见超市简称）推断出真实的商品名称。
+2. 价格辅助：通常商品名后面会跟着价格，利用这个规律定位商品行。
+3. 自动补全：例如“可口可”补全为“可口可乐”，“猪肉馅”保留。
+4. 排除噪音：彻底删除“单价”、“金额”、“小计”、“现金”、“找零”、“电话”、“地址”等非商品行。
 
-输出格式必须是严格的 JSON 对象：
+输出严格的 JSON：
 {
   "items": [
     {
-      "name": "商品名称",
+      "name": "修正后的中文商品名",
       "category": "frozen|refrigerated|room_temp",
       "quantity": 数字,
       "unit": "单位",
@@ -145,9 +146,7 @@ export const ScanReceipt: React.FC = () => {
       "expiryDate": "YYYY-MM-DD"
     }
   ]
-}
-
-如果文字实在太乱无法识别任何商品，请返回 {"items": []}。不要输出任何解释文字。`
+}`
           },
           {
             role: 'user',
@@ -202,6 +201,19 @@ export const ScanReceipt: React.FC = () => {
     setParsedItems(items => items.map(item => 
       item.id === id ? { ...item, quantity: newQuantity } : item
     ));
+  };
+
+  const addItemManually = () => {
+    if (!newItemName.trim()) return;
+    const newItem: ParsedItem = {
+      id: `manual-${Date.now()}`,
+      name: newItemName.trim(),
+      category: 'refrigerated',
+      isFridgeItem: true,
+      selected: true,
+    };
+    setParsedItems([newItem, ...parsedItems]);
+    setNewItemName('');
   };
 
   const saveItems = async () => {
@@ -376,6 +388,26 @@ export const ScanReceipt: React.FC = () => {
           </div>
           
           <div className="flex-1 overflow-y-auto min-h-[350px] mb-8 no-scrollbar">
+            {/* Manual Add Input */}
+            {parsedItems.length > 0 && (
+              <div className="mb-4 flex gap-2">
+                <input
+                  type="text"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addItemManually()}
+                  placeholder="手动添加漏掉的商品..."
+                  className="flex-1 bg-fridge-bg border border-black/5 rounded-full px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-fridge-orange/20 outline-none"
+                />
+                <button
+                  onClick={addItemManually}
+                  className="bg-fridge-orange text-white px-4 py-2 rounded-full font-black text-sm shadow-sm active:scale-95 transition-all"
+                >
+                  添加
+                </button>
+              </div>
+            )}
+
             <AnimatePresence mode="popLayout">
               {parsedItems.length === 0 ? (
                 <motion.div 
