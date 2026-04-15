@@ -9,6 +9,7 @@ import { Camera, Upload, Loader2, CheckCircle } from 'lucide-react';
 import { PixelSnowflake, PixelIceCube, PixelBox } from '../components/PixelIcons';
 import { OpenAI } from 'openai';
 import Tesseract from 'tesseract.js';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ParsedItem {
   id: string;
@@ -20,8 +21,6 @@ interface ParsedItem {
   expiryDate?: string;
   selected: boolean;
 }
-
-import { motion, AnimatePresence } from 'motion/react';
 
 export const ScanReceipt: React.FC = () => {
   const { user } = useAuth();
@@ -52,7 +51,6 @@ export const ScanReceipt: React.FC = () => {
     reader.onloadend = () => {
       const img = new Image();
       img.onload = () => {
-        // Resize image if it's too large (max 1600px width/height)
         const maxDim = 1600;
         let width = img.width;
         let height = img.height;
@@ -76,14 +74,16 @@ export const ScanReceipt: React.FC = () => {
         const resizedImage = canvas.toDataURL('image/jpeg', 0.9);
         setImage(resizedImage);
 
-        // Create a high-contrast grayscale version for OCR
         const ocrCanvas = document.createElement('canvas');
-        ocrCanvas.width = width;
-        ocrCanvas.height = height;
+        const scale = 2;
+        ocrCanvas.width = width * scale;
+        ocrCanvas.height = height * scale;
         const ocrCtx = ocrCanvas.getContext('2d');
         if (ocrCtx) {
-          ocrCtx.filter = 'grayscale(100%) contrast(150%) brightness(110%)';
-          ocrCtx.drawImage(img, 0, 0, width, height);
+          ocrCtx.imageSmoothingEnabled = true;
+          ocrCtx.imageSmoothingQuality = 'high';
+          ocrCtx.filter = 'grayscale(100%) contrast(160%) brightness(110%)';
+          ocrCtx.drawImage(img, 0, 0, width * scale, height * scale);
           setOcrImage(ocrCanvas.toDataURL('image/png'));
         }
 
@@ -104,7 +104,6 @@ export const ScanReceipt: React.FC = () => {
     setDebugText(null);
 
     try {
-      // Step 1: Perform OCR locally using the optimized OCR image
       const targetImage = ocrImage || image;
       const { data: { text } } = await Tesseract.recognize(targetImage, 'chi_sim+eng', {
         logger: m => {
@@ -120,25 +119,26 @@ export const ScanReceipt: React.FC = () => {
         throw new Error('未能从图片中识别出足够的文字。请尝试：\n1. 靠近拍摄\n2. 保持光线充足\n3. 确保文字水平');
       }
 
-      // Step 2: Send extracted text to DeepSeek Chat with a more robust prompt
       const todayStr = new Date().toISOString().split('T')[0];
       const response = await openai.chat.completions.create({
         model: 'deepseek-chat',
         messages: [
           {
             role: 'system',
-            content: `你是一个顶级的超市小票数据清洗专家。我会给你一段非常杂乱的 OCR 文本。
-请执行以下逻辑：
-1. 深度扫描：即使文字只有一半对，也要结合上下文（如价格、单位、常见超市简称）推断出真实的商品名称。
-2. 价格辅助：通常商品名后面会跟着价格，利用这个规律定位商品行。
-3. 自动补全：例如“可口可”补全为“可口可乐”，“猪肉馅”保留。
-4. 排除噪音：彻底删除“单价”、“金额”、“小计”、“现金”、“找零”、“电话”、“地址”等非商品行。
+            content: `你是一个极其严谨的超市小票数据提取专家。
+我会给你一段 OCR 文本，请严格遵守以下规则：
+1. 严禁幻想：只提取小票上明确出现的商品。如果文字太乱看不清，直接忽略，绝对不要猜测不存在的商品（如可口可乐）。
+2. 修正名称：修正 OCR 识别错误的汉字（例如“圆椒起”修正为“圆椒”）。
+3. 判定逻辑：
+   - isFridgeItem: 只要是食材、生鲜、零食、调料，必须为 true。只有洗发水、纸巾等日用品为 false。
+   - category: 蔬菜水果默认为 refrigerated（冷藏），肉类默认为 frozen（冷冻），干货默认为 room_temp（常温）。
+4. 价格辅助：商品名通常在单价和金额之前，利用这个位置关系定位。
 
-输出严格的 JSON：
+输出严格 JSON：
 {
   "items": [
     {
-      "name": "修正后的中文商品名",
+      "name": "修正后的中文名",
       "category": "frozen|refrigerated|room_temp",
       "quantity": 数字,
       "unit": "单位",
@@ -158,8 +158,6 @@ export const ScanReceipt: React.FC = () => {
       });
 
       let content = response.choices[0].message.content || '{"items": []}';
-      
-      // Clean up potential markdown formatting
       content = content.replace(/```json\n?/, '').replace(/```\n?$/, '').trim();
 
       let rawItems: any[] = [];
@@ -223,7 +221,6 @@ export const ScanReceipt: React.FC = () => {
 
     try {
       const batch = writeBatch(db);
-      
       selectedItems.forEach((item) => {
         const docRef = doc(collection(db, 'items'));
         let expiryDateObj = null;
@@ -233,7 +230,6 @@ export const ScanReceipt: React.FC = () => {
             expiryDateObj = parsedDate;
           }
         }
-
         batch.set(docRef, {
           userId: user.uid,
           name: (item.name || 'Unknown Item').substring(0, 100),
@@ -246,7 +242,6 @@ export const ScanReceipt: React.FC = () => {
           expiryDate: expiryDateObj,
         });
       });
-
       await batch.commit();
       navigate('/');
     } catch (err) {
@@ -262,7 +257,6 @@ export const ScanReceipt: React.FC = () => {
       exit={{ opacity: 0, y: 20 }}
       className="max-w-4xl mx-auto pb-20"
     >
-      {/* Mobile Header */}
       <header className="md:hidden flex items-center justify-between py-2 mb-8">
         <h1 className="text-4xl font-black tracking-tight text-fridge-text">扫描小票</h1>
         <div className="bg-fridge-orange p-3.5 rounded-full text-white shadow-lg shadow-fridge-orange/20">
@@ -270,7 +264,6 @@ export const ScanReceipt: React.FC = () => {
         </div>
       </header>
 
-      {/* Desktop Header */}
       <header className="hidden md:block mb-10">
         <h1 className="text-5xl font-black tracking-tight text-fridge-text">扫描小票</h1>
         <p className="text-lg font-bold text-fridge-text-muted mt-2">拍下您的购物小票，AI 将自动识别并分类您的食材。</p>
@@ -290,7 +283,6 @@ export const ScanReceipt: React.FC = () => {
             </div>
           </div>
         )}
-        {/* Upload Section */}
         <div className="fridge-card p-8 flex flex-col items-center justify-center min-h-[400px]">
           <input
             type="file"
@@ -373,22 +365,30 @@ export const ScanReceipt: React.FC = () => {
           )}
         </div>
 
-        {/* Results Section */}
         <div className="fridge-card p-8 flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-black flex items-center gap-3 text-fridge-text">
               <CheckCircle className="text-fridge-green" size={28} />
               识别结果
             </h2>
-            {parsedItems.length > 0 && (
-              <span className="text-[13px] font-black bg-fridge-bg text-fridge-text-muted px-4 py-1.5 rounded-full border border-black/5">
-                {parsedItems.filter(i => i.selected).length} / {parsedItems.length}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {parsedItems.length > 0 && (
+                <button 
+                  onClick={() => setParsedItems([])}
+                  className="text-[11px] font-black bg-red-50 text-red-500 px-3 py-1.5 rounded-full border border-red-100 hover:bg-red-100 transition-colors"
+                >
+                  清空
+                </button>
+              )}
+              {parsedItems.length > 0 && (
+                <span className="text-[13px] font-black bg-fridge-bg text-fridge-text-muted px-4 py-1.5 rounded-full border border-black/5">
+                  {parsedItems.filter(i => i.selected).length} / {parsedItems.length}
+                </span>
+              )}
+            </div>
           </div>
           
           <div className="flex-1 overflow-y-auto min-h-[350px] mb-8 no-scrollbar">
-            {/* Manual Add Input */}
             {parsedItems.length > 0 && (
               <div className="mb-4 flex gap-2">
                 <input
@@ -421,53 +421,45 @@ export const ScanReceipt: React.FC = () => {
                   <p className="font-black text-lg text-fridge-text">上传并分析小票以在此处查看物品。</p>
                 </motion.div>
               ) : (
-                <motion.ul 
-                  layout
-                  className="space-y-4"
-                >
-                    {parsedItems.map((item) => (
-                      <motion.li 
-                        key={item.id}
-                        layout
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        onClick={() => toggleSelection(item.id)}
-                        className={`flex items-center justify-between p-5 rounded-fridge border transition-all cursor-pointer active:scale-[0.98] ${item.selected ? 'bg-fridge-orange/5 border-fridge-orange/20 shadow-sm' : 'bg-white border-black/5'}`}
-                      >
-                        <div className="flex items-center gap-4 flex-1">
-                          <div 
-                            className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${item.selected ? 'bg-fridge-orange border-fridge-orange' : 'border-black/10'}`}
-                          >
-                            {item.selected && <CheckCircle size={16} className="text-white" />}
-                          </div>
-                          <div className="flex-1">
-                            <p className={`font-black text-lg ${item.selected ? 'text-fridge-text' : 'text-fridge-text-muted'}`}>{item.name}</p>
-                            <div className="flex gap-3 items-center mt-1">
-                              <span className="text-[11px] font-black uppercase tracking-wider text-fridge-text-muted flex items-center gap-1.5">
-                                {item.category === 'refrigerated' ? <><PixelSnowflake className="w-3.5 h-3.5 text-fridge-orange" /> 冷藏</> : item.category === 'frozen' ? <><PixelIceCube className="w-3.5 h-3.5 text-fridge-blue" /> 冷冻</> : <><PixelBox className="w-3.5 h-3.5 text-fridge-green" /> 常温</>}
-                              </span>
-                              {!item.isFridgeItem && <span className="text-[11px] font-black bg-fridge-peach/20 text-fridge-orange px-2 py-0.5 rounded-md">建议丢弃</span>}
-                            </div>
+                <motion.ul layout className="space-y-4">
+                  {parsedItems.map((item) => (
+                    <motion.li 
+                      key={item.id}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onClick={() => toggleSelection(item.id)}
+                      className={`flex items-center justify-between p-5 rounded-fridge border transition-all cursor-pointer active:scale-[0.98] ${item.selected ? 'bg-fridge-orange/5 border-fridge-orange/20 shadow-sm' : 'bg-white border-black/5'}`}
+                    >
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${item.selected ? 'bg-fridge-orange border-fridge-orange' : 'border-black/10'}`}>
+                          {item.selected && <CheckCircle size={16} className="text-white" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-black text-lg ${item.selected ? 'text-fridge-text' : 'text-fridge-text-muted'}`}>{item.name}</p>
+                          <div className="flex gap-3 items-center mt-1">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-fridge-text-muted flex items-center gap-1.5">
+                              {item.category === 'refrigerated' ? <><PixelSnowflake className="w-3.5 h-3.5 text-fridge-orange" /> 冷藏</> : item.category === 'frozen' ? <><PixelIceCube className="w-3.5 h-3.5 text-fridge-blue" /> 冷冻</> : <><PixelBox className="w-3.5 h-3.5 text-fridge-green" /> 常温</>}
+                            </span>
+                            {!item.isFridgeItem && <span className="text-[11px] font-black bg-fridge-peach/20 text-fridge-orange px-2 py-0.5 rounded-md">建议丢弃</span>}
                           </div>
                         </div>
-                        {item.selected && (
-                          <div 
-                            className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-black/5 shadow-sm"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input 
-                              type="number" 
-                              min="0"
-                              value={item.quantity || ''} 
-                              onChange={(e) => updateQuantity(item.id, e.target.value ? Number(e.target.value) : undefined)}
-                              className="w-14 text-[15px] font-black border-none focus:ring-0 p-1 text-center bg-transparent text-fridge-text"
-                              placeholder="0"
-                            />
-                            {item.unit && <span className="text-[11px] font-black text-fridge-text-muted pr-3">{item.unit}</span>}
-                          </div>
-                        )}
-                      </motion.li>
-                    ))}
+                      </div>
+                      {item.selected && (
+                        <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-black/5 shadow-sm" onClick={(e) => e.stopPropagation()}>
+                          <input 
+                            type="number" 
+                            min="0"
+                            value={item.quantity || ''} 
+                            onChange={(e) => updateQuantity(item.id, e.target.value ? Number(e.target.value) : undefined)}
+                            className="w-14 text-[15px] font-black border-none focus:ring-0 p-1 text-center bg-transparent text-fridge-text"
+                            placeholder="0"
+                          />
+                          {item.unit && <span className="text-[11px] font-black text-fridge-text-muted pr-3">{item.unit}</span>}
+                        </div>
+                      )}
+                    </motion.li>
+                  ))}
                 </motion.ul>
               )}
             </AnimatePresence>
