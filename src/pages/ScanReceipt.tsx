@@ -29,10 +29,12 @@ export const ScanReceipt: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [image, setImage] = useState<string | null>(null);
+  const [ocrImage, setOcrImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [debugText, setDebugText] = useState<string | null>(null);
 
   const apiKey = process.env.FRIDGE_API_KEY || process.env.GEMINI_API_KEY;
   const openai = new OpenAI({
@@ -70,10 +72,23 @@ export const ScanReceipt: React.FC = () => {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
         
-        const resizedImage = canvas.toDataURL('image/jpeg', 0.8);
+        const resizedImage = canvas.toDataURL('image/jpeg', 0.9);
         setImage(resizedImage);
+
+        // Create a high-contrast grayscale version for OCR
+        const ocrCanvas = document.createElement('canvas');
+        ocrCanvas.width = width;
+        ocrCanvas.height = height;
+        const ocrCtx = ocrCanvas.getContext('2d');
+        if (ocrCtx) {
+          ocrCtx.filter = 'grayscale(100%) contrast(150%) brightness(110%)';
+          ocrCtx.drawImage(img, 0, 0, width, height);
+          setOcrImage(ocrCanvas.toDataURL('image/png'));
+        }
+
         setParsedItems([]);
         setError(null);
+        setDebugText(null);
       };
       img.src = reader.result as string;
     };
@@ -85,10 +100,12 @@ export const ScanReceipt: React.FC = () => {
     setLoading(true);
     setOcrProgress(0);
     setError(null);
+    setDebugText(null);
 
     try {
-      // Step 1: Perform OCR locally because DeepSeek API at api.deepseek.com is text-only
-      const { data: { text } } = await Tesseract.recognize(image, 'chi_sim+eng', {
+      // Step 1: Perform OCR locally using the optimized OCR image
+      const targetImage = ocrImage || image;
+      const { data: { text } } = await Tesseract.recognize(targetImage, 'chi_sim+eng', {
         logger: m => {
           if (m.status === 'recognizing text') {
             setOcrProgress(Math.round(m.progress * 100));
@@ -96,32 +113,45 @@ export const ScanReceipt: React.FC = () => {
         }
       });
 
+      setDebugText(text);
+
       if (!text || text.trim().length < 5) {
-        throw new Error('未能从图片中识别出足够的文字，请确保图片清晰且包含购物清单。');
+        throw new Error('未能从图片中识别出足够的文字。请尝试：\n1. 靠近拍摄\n2. 保持光线充足\n3. 确保文字水平');
       }
 
-      // Step 2: Send extracted text to DeepSeek Chat
+      // Step 2: Send extracted text to DeepSeek Chat with a more robust prompt
       const todayStr = new Date().toISOString().split('T')[0];
       const response = await openai.chat.completions.create({
         model: 'deepseek-chat',
         messages: [
           {
             role: 'system',
-            content: `You are a grocery receipt parser. I will provide you with raw OCR text from a shopping receipt. 
-Your task is to extract the items and return them as a JSON object with an "items" key.
-For each item:
-1. name: Name in Chinese.
-2. category: "frozen", "refrigerated", or "room_temp".
-3. quantity: Number (if available).
-4. unit: Unit string (if available).
-5. isFridgeItem: Boolean (true if it's food/pantry, false if non-food).
-6. expiryDate: Estimated expiry date (YYYY-MM-DD) based on today's date (${todayStr}).
+            content: `你是一个专业的超市小票分析专家。我会给你一段非常杂乱的 OCR 识别文本，其中包含很多错别字、乱码和无关信息。
+你的任务是：
+1. 从乱码中“打捞”出真实的商品名称（通常是中文）。
+2. 过滤掉店铺名、电话、日期、流水号等无关信息。
+3. 预测每个商品的分类（frozen/refrigerated/room_temp）。
+4. 估算保质期（基于今天：${todayStr}）。
 
-Return ONLY the JSON object. Do not include markdown formatting.`
+输出格式必须是严格的 JSON 对象：
+{
+  "items": [
+    {
+      "name": "商品名称",
+      "category": "frozen|refrigerated|room_temp",
+      "quantity": 数字,
+      "unit": "单位",
+      "isFridgeItem": true,
+      "expiryDate": "YYYY-MM-DD"
+    }
+  ]
+}
+
+如果文字实在太乱无法识别任何商品，请返回 {"items": []}。不要输出任何解释文字。`
           },
           {
             role: 'user',
-            content: `OCR Text:\n${text}`
+            content: `OCR 原始文本：\n${text}`
           }
         ],
         // @ts-ignore
@@ -316,9 +346,17 @@ Return ONLY the JSON object. Do not include markdown formatting.`
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-6 p-4 bg-red-50 text-red-600 rounded-fridge border border-red-100 text-sm w-full text-center font-black"
+              className="mt-6 p-4 bg-red-50 text-red-600 rounded-fridge border border-red-100 text-sm w-full font-black"
             >
-              {error}
+              <p className="mb-2">⚠️ {error}</p>
+              {debugText && (
+                <details className="mt-2 text-[10px] opacity-70">
+                  <summary className="cursor-pointer hover:underline">查看识别到的原始文字（调试用）</summary>
+                  <pre className="mt-2 whitespace-pre-wrap bg-white/50 p-2 rounded border border-red-200 max-h-32 overflow-y-auto">
+                    {debugText}
+                  </pre>
+                </details>
+              )}
             </motion.div>
           )}
         </div>
