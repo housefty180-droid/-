@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
-import { GoogleGenAI, Type } from '@google/genai';
+import { OpenAI } from 'openai';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../AuthContext';
@@ -17,8 +17,12 @@ export const VoiceAssistant: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState('');
-  const apiKey = process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+  const apiKey = process.env.FRIDGE_API_KEY || process.env.GEMINI_API_KEY;
+  const openai = new OpenAI({
+    apiKey: apiKey || '',
+    baseURL: 'https://api.deepseek.com',
+    dangerouslyAllowBrowser: true
+  });
 
   useEffect(() => {
     if (feedback) {
@@ -34,7 +38,7 @@ export const VoiceAssistant: React.FC = () => {
     }
 
     if (!apiKey) {
-      setFeedback('未配置 GEMINI_API_KEY，无法使用语音助手。');
+      setFeedback('未配置 FRIDGE_API_KEY，无法使用语音助手。');
       return;
     }
 
@@ -84,36 +88,26 @@ export const VoiceAssistant: React.FC = () => {
 
     try {
       const todayStr = new Date().toISOString().split('T')[0];
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `User said: "${text}". Parse this into an action for a fridge management app.
+      const response = await openai.chat.completions.create({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a fridge management assistant. Parse the user's voice command into a JSON action.
 Action can be 'ADD' (add a new item) or 'DELETE' (remove/consume an item).
-If ADD, extract name, category (frozen, refrigerated, room_temp), quantity, unit, and estimate expiryDate (YYYY-MM-DD) from today (${todayStr}) using standard guidelines or search.
-If DELETE, extract the name of the item to delete.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              action: { type: Type.STRING, enum: ['ADD', 'DELETE', 'UNKNOWN'] },
-              item: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  category: { type: Type.STRING, enum: ['frozen', 'refrigerated', 'room_temp'] },
-                  quantity: { type: Type.NUMBER },
-                  unit: { type: Type.STRING },
-                  expiryDate: { type: Type.STRING }
-                }
-              }
-            },
-            required: ['action']
+If ADD, extract name, category (frozen, refrigerated, room_temp), quantity, unit, and estimate expiryDate (YYYY-MM-DD) from today (${todayStr}).
+If DELETE, extract the name of the item to delete.
+Return JSON format: {"action": "ADD"|"DELETE"|"UNKNOWN", "item": {"name": "...", "category": "...", "quantity": 1, "unit": "...", "expiryDate": "..."}}`
+          },
+          {
+            role: 'user',
+            content: text
           }
-        }
+        ],
+        response_format: { type: 'json_object' }
       });
 
-      const result = JSON.parse(response.text?.trim() || '{}');
+      const result = JSON.parse(response.choices[0].message.content || '{}');
 
       if (result.action === 'ADD' && result.item?.name) {
         let expiryDateObj = null;

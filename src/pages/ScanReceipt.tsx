@@ -7,7 +7,7 @@ import { handleFirestoreError } from '../utils/firestoreErrorHandler';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Upload, Loader2, CheckCircle } from 'lucide-react';
 import { PixelSnowflake, PixelIceCube, PixelBox } from '../components/PixelIcons';
-import { GoogleGenAI, Type } from '@google/genai';
+import { OpenAI } from 'openai';
 
 interface ParsedItem {
   id: string;
@@ -32,8 +32,12 @@ export const ScanReceipt: React.FC = () => {
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+  const apiKey = process.env.FRIDGE_API_KEY || process.env.GEMINI_API_KEY;
+  const openai = new OpenAI({
+    apiKey: apiKey || '',
+    baseURL: 'https://api.deepseek.com',
+    dangerouslyAllowBrowser: true
+  });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -80,66 +84,52 @@ export const ScanReceipt: React.FC = () => {
     setError(null);
 
     try {
-      const base64Data = image.split(',')[1];
-      const mimeType = image.split(';')[0].split(':')[1];
-
       const todayStr = new Date().toISOString().split('T')[0];
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType,
-              },
-            },
-            {
-              text: `Extract the grocery items from this receipt. For each item:
+      const response = await openai.chat.completions.create({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `Extract the grocery items from this receipt. For each item:
 1. Provide the name in Chinese.
 2. Infer the storage category (frozen, refrigerated, or room_temp).
 3. Extract quantity and unit in Chinese if available.
 4. Determine if it belongs in a fridge/pantry (isFridgeItem: true) or if it is a non-food item like toilet paper (isFridgeItem: false).
-5. For branded items (e.g., specific milk brands), use Google Search to find their typical shelf life. For fresh meat/produce, use standard general guidelines (e.g., fresh meat 3-5 days refrigerated, 1 month frozen). Calculate the estimated expiry date from today (${todayStr}) and return it in YYYY-MM-DD format.`,
-            },
-          ],
-        },
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING, description: 'The name of the item' },
-                category: { 
-                  type: Type.STRING, 
-                  description: 'The storage category',
-                  enum: ['frozen', 'refrigerated', 'room_temp']
+5. Use your knowledge to estimate the typical shelf life. Calculate the estimated expiry date from today (${todayStr}) and return it in YYYY-MM-DD format.
+
+Return the result as a JSON array of objects.` },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: image,
                 },
-                quantity: { type: Type.NUMBER, description: 'The quantity of the item' },
-                unit: { type: Type.STRING, description: 'The unit of measurement (e.g., kg, lbs, count)' },
-                isFridgeItem: { type: Type.BOOLEAN, description: 'True if it is a food/fridge/pantry item, false if it is a non-food item like toilet paper or cleaning supplies.' },
-                expiryDate: { type: Type.STRING, description: 'Estimated expiry date in YYYY-MM-DD format based on brand search or general guidelines.' }
               },
-              required: ['name', 'category', 'isFridgeItem']
-            }
-          }
-        }
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' }
       });
 
-      const jsonStr = response.text?.trim() || '[]';
-      const rawItems: any[] = JSON.parse(jsonStr);
+      const content = response.choices[0].message.content || '[]';
+      // DeepSeek JSON mode might return an object with a key, so we handle that
+      let rawItems: any[] = [];
+      try {
+        const parsed = JSON.parse(content);
+        rawItems = Array.isArray(parsed) ? parsed : (parsed.items || parsed.grocery_items || []);
+      } catch (e) {
+        console.error("Failed to parse JSON", e);
+      }
+
       const items: ParsedItem[] = rawItems.map((item, index) => ({
         ...item,
         id: `item-${index}-${Date.now()}`,
-        selected: item.isFridgeItem, // Auto-select fridge items, deselect non-fridge items
+        selected: item.isFridgeItem,
       }));
       setParsedItems(items);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || '分析小票失败，请重试。');
+      setError(err.message || '分析小票失败，请检查 API 额度或模型支持。');
     } finally {
       setLoading(false);
     }
@@ -226,7 +216,7 @@ export const ScanReceipt: React.FC = () => {
             <div>
               <h3 className="text-lg font-black text-amber-900">未配置 AI 密钥</h3>
               <p className="text-sm font-bold text-amber-700 mt-1">
-                请在 AI Studio 的 <b>Settings -&gt; Secrets</b> 中添加 <b>GEMINI_API_KEY</b> 变量，否则无法识别小票。
+                请在 AI Studio 的 <b>Settings -&gt; Secrets</b> 中添加 <b>FRIDGE_API_KEY</b> 变量，否则无法识别小票。
               </p>
             </div>
           </div>
