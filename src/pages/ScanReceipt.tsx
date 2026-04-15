@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { Camera, Upload, Loader2, CheckCircle } from 'lucide-react';
 import { PixelSnowflake, PixelIceCube, PixelBox } from '../components/PixelIcons';
 import { OpenAI } from 'openai';
+import Tesseract from 'tesseract.js';
 
 interface ParsedItem {
   id: string;
@@ -29,6 +30,7 @@ export const ScanReceipt: React.FC = () => {
   
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,19 +83,33 @@ export const ScanReceipt: React.FC = () => {
   const analyzeReceipt = async () => {
     if (!image) return;
     setLoading(true);
+    setOcrProgress(0);
     setError(null);
 
     try {
+      // Step 1: Perform OCR locally because DeepSeek API at api.deepseek.com is text-only
+      const { data: { text } } = await Tesseract.recognize(image, 'chi_sim+eng', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            setOcrProgress(Math.round(m.progress * 100));
+          }
+        }
+      });
+
+      if (!text || text.trim().length < 5) {
+        throw new Error('未能从图片中识别出足够的文字，请确保图片清晰且包含购物清单。');
+      }
+
+      // Step 2: Send extracted text to DeepSeek Chat
       const todayStr = new Date().toISOString().split('T')[0];
       const response = await openai.chat.completions.create({
-        model: 'deepseek-vl',
+        model: 'deepseek-chat',
         messages: [
           {
-            role: 'user',
-            content: [
-              { 
-                type: 'text', 
-                text: `Extract the grocery items from this receipt. For each item:
+            role: 'system',
+            content: `You are a grocery receipt parser. I will provide you with raw OCR text from a shopping receipt. 
+Your task is to extract the items and return them as a JSON object with an "items" key.
+For each item:
 1. name: Name in Chinese.
 2. category: "frozen", "refrigerated", or "room_temp".
 3. quantity: Number (if available).
@@ -101,24 +117,20 @@ export const ScanReceipt: React.FC = () => {
 5. isFridgeItem: Boolean (true if it's food/pantry, false if non-food).
 6. expiryDate: Estimated expiry date (YYYY-MM-DD) based on today's date (${todayStr}).
 
-Return the result as a JSON object with an "items" key containing an array of these objects. Do not include any markdown formatting or extra text.` 
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image,
-                },
-              },
-            ],
+Return ONLY the JSON object. Do not include markdown formatting.`
           },
+          {
+            role: 'user',
+            content: `OCR Text:\n${text}`
+          }
         ],
-        // @ts-ignore - DeepSeek might require specific format or not support json_object yet
+        // @ts-ignore
         response_format: { type: 'json_object' }
       });
 
       let content = response.choices[0].message.content || '{"items": []}';
       
-      // Clean up potential markdown formatting if the model ignores response_format
+      // Clean up potential markdown formatting
       content = content.replace(/```json\n?/, '').replace(/```\n?$/, '').trim();
 
       let rawItems: any[] = [];
@@ -127,7 +139,6 @@ Return the result as a JSON object with an "items" key containing an array of th
         rawItems = Array.isArray(parsed) ? parsed : (parsed.items || parsed.grocery_items || []);
       } catch (e) {
         console.error("Failed to parse JSON", e);
-        // Fallback: try to find anything that looks like a JSON array
         const match = content.match(/\[.*\]/s);
         if (match) {
           rawItems = JSON.parse(match[0]);
@@ -144,9 +155,10 @@ Return the result as a JSON object with an "items" key containing an array of th
       setParsedItems(items);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || '分析小票失败，请检查 API 额度或模型支持。');
+      setError(err.message || '分析小票失败，请检查 API 额度或网络连接。');
     } finally {
       setLoading(false);
+      setOcrProgress(0);
     }
   };
 
@@ -276,7 +288,7 @@ Return the result as a JSON object with an "items" key containing an array of th
                     {loading ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="animate-spin" size={20} />
-                        <span>处理中...</span>
+                        <span>{ocrProgress > 0 ? `识别中 ${ocrProgress}%` : '处理中...'}</span>
                       </div>
                     ) : '开始分析'}
                   </motion.button>
