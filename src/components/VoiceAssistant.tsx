@@ -17,8 +17,8 @@ export const VoiceAssistant: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState('');
-
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  const apiKey = process.env.GEMINI_API_KEY;
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
 
   useEffect(() => {
     if (feedback) {
@@ -30,6 +30,11 @@ export const VoiceAssistant: React.FC = () => {
   const startListening = () => {
     if (!SpeechRecognition) {
       setFeedback('您的浏览器不支持语音识别。');
+      return;
+    }
+
+    if (!apiKey) {
+      setFeedback('未配置 GEMINI_API_KEY，无法使用语音助手。');
       return;
     }
 

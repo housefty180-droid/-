@@ -32,7 +32,8 @@ export const ScanReceipt: React.FC = () => {
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  const apiKey = process.env.GEMINI_API_KEY;
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -217,6 +218,19 @@ export const ScanReceipt: React.FC = () => {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {!apiKey && (
+          <div className="lg:col-span-2 bg-amber-50 border-2 border-amber-200 p-6 rounded-fridge-lg flex flex-col items-center text-center gap-4 mb-4">
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
+              <Camera size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-amber-900">未配置 AI 密钥</h3>
+              <p className="text-sm font-bold text-amber-700 mt-1">
+                请在 AI Studio 的 <b>Settings -&gt; Secrets</b> 中添加 <b>GEMINI_API_KEY</b> 变量，否则无法识别小票。
+              </p>
+            </div>
+          </div>
+        )}
         {/* Upload Section */}
         <div className="fridge-card p-8 flex flex-col items-center justify-center min-h-[400px]">
           <input
